@@ -107,6 +107,36 @@ class MasterDatabase(object):
         row.append()
         loc_table.flush()
 
+    def __find_in_table(self, name, table):
+        assert isinstance(table, tables.Table)
+        newname = name.replace(" ", "").lower()
+        for row in table.iterrows():            
+            if newname in row["name"].replace(" ", "").lower():
+                return row
+        return None
+    
+    def find_body(self, name, catalog = None):
+        """Look for an object by name. It can match non-exact results and 
+        multiple names. If catalog is not None then only the specified catalog
+        is used (faster)
+        
+        Returns a FixedBody or None if the object could not be found.
+        """
+        if catalog is None:
+            for t in self.db.root.catalogs:
+                res = self.__find_in_table(name, t)
+                if res is not None:
+                    return ephem.readdb(res["edb_string"])
+            return None
+        else:
+            res = self.__find_in_table(name, self.db.getNode("/catalogs",
+                                                             catalog))
+            if res is not None:
+                return ephem.readdb(res["edb_string"])
+            else:
+                return None
+        
+
 def create_catalog_from_edb(name, master_db, edb_file_obj,):
     """Creates an h5 catalog from a xepeh edb one.
     The xephem database format is described at 
