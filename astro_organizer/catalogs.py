@@ -1,6 +1,9 @@
 import ephem
 import tables
 import logging
+import pytz
+import datetime
+import dateutil
 
 classes_dict = {"A":"Cluster of galaxies",
                 "B":"Binary Star (Deprecated)",
@@ -42,6 +45,7 @@ class Location(tables.IsDescription):
     latitude = tables.Float64Col()
     longitude = tables.Float64Col()
     height = tables.Float64Col()
+    bortle_class = tables.Int8Col()
 
 class MasterDatabase(object):
     """This is a class that keeps track of all the info in the organizer. The
@@ -82,7 +86,8 @@ class MasterDatabase(object):
         """
         create_catalog_from_edb(catalog_name, self, edb_file_obj)
         
-    def add_location(self, name, latitude, longitude, height):
+    def add_location(self, name, latitude, longitude, height, 
+                     bortle_class = 7):
         """Adds a location to the database.
         
         Parameters:
@@ -98,6 +103,7 @@ class MasterDatabase(object):
         row["latitude"] = latitude
         row["longitude"] = longitude
         row["height"] = height
+        row["bortle_class"] = bortle_class
         row.append()
         loc_table.flush()
 
@@ -160,3 +166,71 @@ def create_catalog_from_edb(name, master_db, edb_file_obj,):
     
     db.flush()
     return master_db
+
+def create_observer(db, location, time = "now", timezone = "US/Pacific"):
+    """Creates an Observer in a specified location and at a given time.
+    
+    Parameters:
+    db: a MasterDatabase instance.
+    location: a string describing the location
+    time: either a datetime instance, or one of the strings: 
+          (now, sunrise, sunset)
+    timezone: a timezone string (see pytz documentation)
+    """
+    
+    assert isinstance(db, MasterDatabase)
+    
+    location_found = False
+    for r in db.db.root.locations.iterrows():
+        if location.lower() in r["name"].lower():
+            location_found = True
+            break
+    if not location_found:
+        raise ValueError("Location %s not in the database" % location)
+    
+    latitude = r["latitude"]
+    longitude = r["longitude"]
+    height = r["height"]
+    name = r["name"]
+    
+    observer = ephem.Observer()
+    observer.name = name
+    observer.lat = str(latitude)
+    observer.lon = str(longitude)
+    observer.elev = height    
+    
+    tz = pytz.timezone(timezone)    
+    if type(time) is str:
+        now = datetime.datetime.utcnow()
+        observer.date = ephem.Date(now)
+        observer.horizon = "-18" #astronomical twilight
+        if time == "now":
+            t = ephem.Date(now)
+        elif time == "sunrise":
+            t = observer.next_rising(ephem.Sun(), use_center=True)
+        elif time == "sunset":
+            t = observer.next_setting(ephem.Sun(), use_center=True)
+        else:
+            #assume 
+            d = dateutil.parser.parse(time)
+            if d.tzinfo is None:
+                logging.warn("Assuming that time %s is local"%d)
+                d = d.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
+                    pytz.UTC)
+                t = ephem.Date(t)
+        
+    elif type(time) is datetime.datetime:
+        #check for naive time
+        isinstance(time, datetime.datetime)
+        if time.tzinfo is None:
+            logging.warn("Timezone unspecified, assuming local")
+            d = time.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
+                            pytz.UTC)
+            t = ephem.Date(t)            
+    else:
+        raise ValueError("Wrong value passed as time: %s", time)
+            
+    observer.horizon = 0
+    observer.date = t
+    return observer
+    
