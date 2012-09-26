@@ -114,11 +114,27 @@ class MasterDatabase(object):
             if newname in row["name"].replace(" ", "").lower():
                 return row
         return None
+
+    def find_catalog(self, name):
+        """
+        Finds a catalog from name.
+        """
+        return self.db.getNode("/catalogs", name)
+    
+    def list_all_catalogs(self):
+        """
+        Returns a list with all the catalogs.
+        """
+        return self.db.root.catalogs._v_children.keys()
+        
     
     def find_body(self, name, catalog = None):
         """Look for an object by name. It can match non-exact results and 
         multiple names. If catalog is not None then only the specified catalog
-        is used (faster)
+        is used (faster).
+        Note that this flexibility might trigger some false positives, better to
+        specify a catalog.
+        
         
         Returns a FixedBody or None if the object could not be found.
         """
@@ -135,7 +151,76 @@ class MasterDatabase(object):
                 return ephem.readdb(res["edb_string"])
             else:
                 return None
+    def find_all_visible(self, observer, catalog, 
+                         start_time = None, end_time = None, 
+                         horizon = None,
+                         filter_fun = None
+                         ):
+        """Returns a list of all the objects in a catalog that are visible by 
+        observer in a given timespan.
         
+        Parameters:
+        observer: an ephem.Observer instance
+        db: a MasterDatabase instance
+        catalog: a string defining a catalog
+        start_time: an ephem.Date representing when an observation can start. If
+                    None then the observer time is used.
+        end_time: an ephem.Date representing when an observation can start. If
+                    None then the observer time is used.
+        horizon: if not None defines the observer's horizon, otherwise the one from
+                the observer is used.
+        
+        
+        Returns:
+        a list of ephem.FixedBody instances.
+        """
+        
+        table = self.find_catalog(catalog)
+        isinstance(table, tables.Table)
+        
+        bodies = []
+        for line in table.col("edb_string"):
+            body = ephem.readdb(line)
+            if can_observe(observer, body, start_time, end_time, horizon):
+                bodies.append(body)
+        return bodies    
+    
+    def create_observer(self, location, time = "now"):
+        """Creates an Observer in a specified location and at a given time.
+        
+        Parameters:
+        db: a MasterDatabase instance.
+        location: a string describing the location
+        time: either a datetime instance, or one of the strings: 
+              (now, sunrise, sunset)
+        timezone: a timezone string (see pytz documentation)
+        """
+        
+        location_found = False
+        for r in self.db.root.locations.iterrows():
+            if location.lower() in r["name"].lower():
+                location_found = True
+                break
+        if not location_found:
+            raise ValueError("Location %s not in the database" % location)
+        
+        latitude = r["latitude"]
+        longitude = r["longitude"]
+        height = r["height"]
+        name = r["name"]
+        
+        observer = ephem.Observer()
+        observer.name = name
+        observer.lat = str(latitude)
+        observer.lon = str(longitude)
+        observer.elev = height    
+        
+        t = create_date(observer, time)
+                
+        observer.horizon = 0
+        observer.date = t
+        return observer
+
 
 def create_catalog_from_edb(name, master_db, edb_file_obj,):
     """Creates an h5 catalog from a xepeh edb one.
@@ -197,39 +282,17 @@ def create_catalog_from_edb(name, master_db, edb_file_obj,):
     db.flush()
     return master_db
 
-def create_observer(db, location, time = "now", timezone = "US/Pacific"):
-    """Creates an Observer in a specified location and at a given time.
+def create_date(observer, time = "now"):
+    """Creates a date for an observer. The actual time can be specified as a 
+    string or a datetime. If the time is interpreted and no timezone is found
+    then the local timezone is used. Similarly if time is a datetime and no
+    tzinfo member is specified, it is assumed to be local.
     
-    Parameters:
-    db: a MasterDatabase instance.
-    location: a string describing the location
     time: either a datetime instance, or one of the strings: 
           (now, sunrise, sunset)
     timezone: a timezone string (see pytz documentation)
     """
-    
-    assert isinstance(db, MasterDatabase)
-    
-    location_found = False
-    for r in db.db.root.locations.iterrows():
-        if location.lower() in r["name"].lower():
-            location_found = True
-            break
-    if not location_found:
-        raise ValueError("Location %s not in the database" % location)
-    
-    latitude = r["latitude"]
-    longitude = r["longitude"]
-    height = r["height"]
-    name = r["name"]
-    
-    observer = ephem.Observer()
-    observer.name = name
-    observer.lat = str(latitude)
-    observer.lon = str(longitude)
-    observer.elev = height    
-    
-    tz = pytz.timezone(timezone)    
+
     if type(time) is str:
         now = datetime.datetime.utcnow()
         observer.date = ephem.Date(now)
@@ -241,10 +304,10 @@ def create_observer(db, location, time = "now", timezone = "US/Pacific"):
         elif time == "sunset":
             t = observer.next_setting(ephem.Sun(), use_center=True)
         else:
-            #assume 
+            #assume UTC
             d = dateutil.parser.parse(time)
             if d.tzinfo is None:
-                logging.warn("Assuming that time %s is local"%d)
+                logging.warn("Assuming that time %s is local", d)
                 d = d.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
                     pytz.UTC)
                 t = ephem.Date(t)
@@ -258,9 +321,64 @@ def create_observer(db, location, time = "now", timezone = "US/Pacific"):
                             pytz.UTC)
             t = ephem.Date(t)            
     else:
-        raise ValueError("Wrong value passed as time: %s", time)
-            
-    observer.horizon = 0
-    observer.date = t
-    return observer
+        raise ValueError("Wrong value passed as time: %s", time)    
     
+    return t
+
+    
+def can_observe(observer, body, start_time = None, end_time = None, 
+                horizon = None):
+    """Return True of the observer can observe a body at least once in a 
+    timespan, False otherwise.
+    
+    Parameters:
+    observer: an ephem.Observer instance
+    body: an ephem.FixedBody instance
+    start_time: an ephem.Date representing when an observation can start. If
+                None then the observer time is used.
+    end_time: an ephem.Date representing when an observation can start. If
+                None then the observer time is used.
+    horizon: if not None defines the observer's horizon, otherwise the one from
+            the observer is used.
+    """
+    assert isinstance(observer, ephem.Observer)
+    assert isinstance(body, ephem.FixedBody)
+    
+    copy_observer = ephem.Observer()
+    copy_observer.name = observer.name
+    copy_observer.lat = observer.lat
+    copy_observer.lon = observer.lon
+    copy_observer.elev = observer.elev
+    copy_observer.date = observer.date
+    
+    if start_time is None:
+        start_time = observer.date
+    if end_time is None:
+        end_time = observer.date
+    if horizon is None:
+        copy_observer.horizon = observer.horizon
+    else:
+        copy_observer.horizon = horizon
+    
+    try:
+        setting = copy_observer.next_setting(body)
+        rising = copy_observer.next_rising(body)
+    except ephem.NeverUpError:
+        return False
+    except ephem.AlwaysUpError:
+        return True
+    
+    if rising > setting:
+        rising = copy_observer.previous_rising(body)
+    #====rise========set=======#
+    #========observe======stop=#
+    cond1 = rising < start_time < setting
+    
+    #===========rise========set=======#
+    #===observe========stop===========#    
+    cond2 = start_time < rising < end_time
+    
+    return cond1 or cond2
+
+    
+        
