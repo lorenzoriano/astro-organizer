@@ -4,41 +4,146 @@ import logging
 import pytz
 import datetime
 import dateutil
+import csv
+import math
 
-classes_dict = {"A":"Cluster of galaxies",
-                "B":"Binary Star (Deprecated)",
-                "C":"Cluster, globular",
-                "D":"Star, visual double",
-                "F":"Nebula, diffuse",
-                "G":"Galaxy, spiral",
-                "H":"Galaxy, spherical",
-                "J":"Radio",
-                "K":"Nebula, dark",
-                "L":"Pulsar",
-                "M":"Star, multiple",
-                "N":"Nebula, bright",
-                "O":"Cluster, open",
-                "P":"Nebula, planetary",
-                "Q":"Quasar",
-                "R":"Supernova remnant",
-                "S":"Star",
-                "T":"Stellar object",
-                "U":"Cluster, with nebulosity",
-                "Y":"Supernova",
-                "V":"Star, variable"
-                }
+ephem_dict = {"A":"Cluster of galaxies",
+              "B":"Binary Star (Deprecated)",
+              "C":"Cluster, globular",
+              "D":"Star, visual double",
+              "F":"Nebula, diffuse",
+              "G":"Galaxy, spiral",
+              "H":"Galaxy, spherical",
+              "J":"Radio",
+              "K":"Nebula, dark",
+              "L":"Pulsar",
+              "M":"Star, multiple",
+              "N":"Nebula, bright",
+              "O":"Cluster, open",
+              "P":"Nebula, planetary",
+              "Q":"Quasar",
+              "R":"Supernova remnant",
+              "S":"Star",
+              "T":"Stellar object",
+              "U":"Cluster, with nebulosity",
+              "Y":"Supernova",
+              "V":"Star, variable"
+              }
+
+sac_to_ephem_dict = {'ASTER': 'T',
+                     'BRTNB': 'N',
+                     'CL+NB': 'U',
+                     'DRKNB': 'K',
+                     'GALCL': 'A',
+                     'GALXY': 'F',
+                     'GLOCL': 'C',
+                     'GX+DN': 'F',
+                     'GX+GC': 'C', 
+                     'G+C+N': 'U',
+                     'LMCCN': 'U',
+                     'LMCDN': 'F',
+                     'LMCGC': 'C',
+                     'LMCOC': 'O',
+                     'NONEX': 'T',
+                     'OPNCL': 'O',
+                     'PLNNB': 'P',
+                     'SMCCN': 'U',
+                     'SMCDN': 'F',
+                     'SMCGC': 'C',
+                     'SMCOC': 'O',
+                     'SNREM': 'R',
+                     'QUASR': 'Q'
+                     }
 
 class TableBody(tables.IsDescription):
-    name = tables.StringCol(128)
-    body_type = tables.StringCol(128)
-    catalog = tables.StringCol(128)
-    mag = tables.Float64Col()
+    name = tables.StringCol(20)
+    additional_names = tables.StringCol(20)
+    body_type = tables.StringCol(5)
+    constellation = tables.StringCol(4)
+    
     ra = tables.Float64Col()
     dec = tables.Float64Col()
-    epoch = tables.Float64Col()
-    radius = tables.Float64Col()
-    elong = tables.Float64Col()
-    edb_string = tables.StringCol(1024)
+    
+    
+    mag = tables.Float64Col()
+    
+    surface_brightness = tables.StringCol(4)
+    size_max = tables.StringCol(8)
+    size_min = tables.StringCol(8)
+    positional_angle = tables.Float64Col()
+    sci_class = tables.StringCol(11)
+    central_star_mag = tables.Float64Col()
+    catalog = tables.StringCol(4)
+    ngc_descr = tables.StringCol(55)
+    notes = tables.StringCol(200)
+
+class Body(object):
+    
+    def __init__(self, row_pointer = None):
+        if row_pointer is None:
+            self.name = None
+            self.additional_names = None
+            self.body_type = None
+            self.constellation = None
+            
+            self.ra = None
+            self.dec = None
+            self.mag = None
+            
+            self.surface_brightness = None
+            self.size_max = None
+            self.size_min = None
+            self.positional_angle = None
+            self.sci_class = None
+            self.central_star_mag = None
+            self.catalog = None
+            self.ngc_descr = None
+            self.notes = None
+        
+        else:
+            self.name = row_pointer['name']
+            self.additional_names = row_pointer['additional_names']
+            self.body_type = row_pointer['body_type']
+            self.constellation = row_pointer['constellation']
+            
+            self.ra = row_pointer['ra']
+            self.dec = row_pointer['dec']
+            self.mag = row_pointer['mag']
+            
+            self.surface_brightness = row_pointer['surface_brightness']
+            self.size_max = row_pointer['size_max']
+            self.size_min = row_pointer['size_min']
+            self.positional_angle = row_pointer['positional_angle']
+            self.sci_class = row_pointer['sci_class']
+            self.central_star_mag = row_pointer['central_star_mag']
+            self.catalog = row_pointer['catalog']
+            self.ngc_descr = row_pointer['ngc_descr']
+            self.notes = row_pointer['notes']
+    
+    def ephem_string(self):
+        string = []
+        string.append(self.name)
+        string.append("f|" + sac_to_ephem_dict[self.body_type])
+        string.append(str(ephem.hours(self.ra)))
+        string.append(str(ephem.degrees(self.dec)))
+        string.append(str(self.mag))
+        string.append("2000")
+        
+        max_s = self.size_max
+        if max_s[-1] == 'm': #arcmin
+            fp = float(max_s[:-1]) / 3437.74677078
+        elif max_s[-1] == 's': #arcsec
+            fp = float(max_s[:-1]) / 206264.806247
+        elif max_s[-1] == 'd': #degree
+            fp = float(max_s[:-1]) / 57.2957795131 
+        else:
+            raise ValueError("Unkwnown format for size_max: " + max_s)
+        string.append(str(fp * 206264.806247))
+        
+        return ','.join(string)
+    
+    def ephem_body(self):
+        return ephem.readdb(self.ephem_string())
 
 class Location(tables.IsDescription):
     name = tables.StringCol(128)
@@ -80,11 +185,17 @@ class MasterDatabase(object):
         
         self.db.flush()
         
-    def load_edb(self, catalog_name, edb_file_obj):
+    #def load_edb(self, catalog_name, edb_file_obj):
+        #"""Loads a xephem edb database specified in edb_file_obj and stores it
+        #into catalog_name.
+        #"""
+        #create_catalog_from_edb(catalog_name, self, edb_file_obj)
+
+    def load_sac(self, catalog_name, edb_file_obj):
         """Loads a xephem edb database specified in edb_file_obj and stores it
         into catalog_name.
         """
-        create_catalog_from_edb(catalog_name, self, edb_file_obj)
+        create_catalog_from_sac(catalog_name, self, edb_file_obj)    
         
     def add_location(self, name, latitude, longitude, height, 
                      bortle_class = 7):
@@ -136,21 +247,22 @@ class MasterDatabase(object):
         specify a catalog.
         
         
-        Returns a FixedBody or None if the object could not be found.
+        Returns a Body or None if the object could not be found.
         """
         if catalog is None:
             for t in self.db.root.catalogs:
                 res = self.__find_in_table(name, t)
                 if res is not None:
-                    return ephem.readdb(res["edb_string"])
+                    return Body(res)
             return None
         else:
             res = self.__find_in_table(name, self.db.getNode("/catalogs",
                                                              catalog))
             if res is not None:
-                return ephem.readdb(res["edb_string"])
+                return Body(res)
             else:
                 return None
+    
     def find_all_visible(self, observer, catalog, 
                          start_time = None, end_time = None, 
                          horizon = None,
@@ -221,18 +333,17 @@ class MasterDatabase(object):
         observer.date = t
         return observer
 
-
-def create_catalog_from_edb(name, master_db, edb_file_obj,):
-    """Creates an h5 catalog from a xepeh edb one.
-    The xephem database format is described at 
-    ttp://www.clearskyinstitute.com/xephem/help/xephem.html.
+def create_catalog_from_sac(name, master_db, sac_file_obj,):
+    """Creates an h5 catalog from a Saguaro Astronomical Catalog cvs file.
+    The original file is available at:
+    http://www.saguaroastro.org/content/downloads.htm
     
     Parameters:
     name: the catalog name
     save_db: either a file or a string to use to store the database. An existing
              database will be updated but if a catalog with the same name already
              exists then an error will be raised.
-    edb_file_obj: either a file or a string. This is the location of the edb
+    sac_file_obj: either a file or a string. This is the location of the sac
              database. The file is not overwritten.
     master_db: A MasterDatabase instance, or None if one has to be created.
              
@@ -244,43 +355,53 @@ def create_catalog_from_edb(name, master_db, edb_file_obj,):
     
     group = db.getNode("/", "catalogs")
     
-    table = db.createTable(group, name, TableBody, "Catalog")
+    table = db.createTable(group, name, TableBody, "SAC Database")
     element = table.row    
         
-    if type(edb_file_obj) is str:
-        edb_file_obj = open(edb_file_obj)
-            
-    for line in edb_file_obj:
-        try:
-            body = ephem.readdb(line)
-        except ValueError:
-            continue
-        if not isinstance(body, ephem.FixedBody):
-            logging.warn("Skipping line %s: it's not a fixed body",
-                         line)
-            continue
-        
-        body.compute()
-        
-        element['name'] = body.name
-        try:
-            body_type = classes_dict[body._class]
-        except KeyError:
-            logging.warn("Unknown type %s for line %s", body._class, line)
-            body_type = body._class
-        element["body_type"] = body_type
-        element['catalog'] = name
-        element['mag'] = body.mag
-        element['ra'] = body.a_ra
-        element['dec'] = body.a_dec
-        element['epoch'] = body.a_epoch
-        element['radius'] = body.radius
-        element['elong'] = body.elong
-        element['edb_string'] = line
-        element.append()
+    if type(sac_file_obj) is str:
+        sac_file_obj = open(sac_file_obj)    
     
+    reader = csv.reader(sac_file_obj, delimiter = ',')
+    #skip first line with the field names
+    reader.next()
+    
+    for raw_line in reader:
+        line = [obj.strip() for obj in raw_line]
+        element['name'] = line[0]
+        element['additional_names'] = line[1]
+        element['body_type'] = line[2]
+        element['constellation'] = line[3]
+    
+        element['ra'] = ephem.hours(line[4])
+        element['dec'] = ephem.degrees(line[5])
+        element['mag'] = float(line[6])
+    
+        try:
+            element['surface_brightness'] = float(line[7])
+        except ValueError:
+            element['surface_brightness'] = float(line[6])
+            
+        element['size_max'] = line[10]
+        element['size_min'] = line[11]
+        try:
+            element['positional_angle'] = math.radians(float(line[12]))
+        except ValueError:
+            element['positional_angle'] = 0
+            
+        element['sci_class'] = line[13]
+        try:
+            element['central_star_mag'] = float(line[15])
+        except ValueError:
+            element['central_star_mag'] = float(line[6])
+        element['catalog'] = line[16]
+        element['ngc_descr'] = line[17]
+        element['notes'] = line[18]
+        
+        element.append()
+            
     db.flush()
-    return master_db
+    return master_db        
+
 
 def create_date(observer, time = "now"):
     """Creates a date for an observer. The actual time can be specified as a 
