@@ -3,7 +3,7 @@ import tables
 import logging
 import pytz
 import datetime
-import dateutil
+import dateutil.parser
 import csv
 import math
 
@@ -80,6 +80,7 @@ class TableBody(tables.IsDescription):
 class Body(object):
     
     def __init__(self, row_pointer = None):
+        self.__ephem_body = None
         if row_pointer is None:
             self.name = None
             self.additional_names = None
@@ -99,6 +100,8 @@ class Body(object):
             self.catalog = None
             self.ngc_descr = None
             self.notes = None
+            
+            self.__row_pointer = None
         
         else:
             self.name = row_pointer['name']
@@ -110,7 +113,7 @@ class Body(object):
             self.dec = row_pointer['dec']
             self.mag = row_pointer['mag']
             
-            self.surface_brightness = row_pointer['surface_brightness']
+            self.surface_brightness = float(row_pointer['surface_brightness'])
             self.size_max = row_pointer['size_max']
             self.size_min = row_pointer['size_min']
             self.positional_angle = row_pointer['positional_angle']
@@ -119,18 +122,28 @@ class Body(object):
             self.catalog = row_pointer['catalog']
             self.ngc_descr = row_pointer['ngc_descr']
             self.notes = row_pointer['notes']
+            
+            self.__row_pointer = row_pointer
+    
+    def __repr__(self):
+        return self.name + "; " + self.additional_names
     
     def ephem_string(self):
         string = []
         string.append(self.name)
-        string.append("f|" + sac_to_ephem_dict[self.body_type])
+        try:
+            string.append("f|" + sac_to_ephem_dict[self.body_type])
+        except KeyError:
+            string.append("f|T")
         string.append(str(ephem.hours(self.ra)))
         string.append(str(ephem.degrees(self.dec)))
         string.append(str(self.mag))
         string.append("2000")
         
         max_s = self.size_max
-        if max_s[-1] == 'm': #arcmin
+        if len(max_s) == 0:
+            fp = 0
+        elif max_s[-1] == 'm': #arcmin
             fp = float(max_s[:-1]) / 3437.74677078
         elif max_s[-1] == 's': #arcsec
             fp = float(max_s[:-1]) / 206264.806247
@@ -142,8 +155,33 @@ class Body(object):
         
         return ','.join(string)
     
+    @property
     def ephem_body(self):
-        return ephem.readdb(self.ephem_string())
+        if self.__ephem_body is None:
+            self.__ephem_body = ephem.readdb(self.ephem_string())
+        return self.__ephem_body
+    
+    def sky_safari_entry(self):
+        """
+        Returns a string with the SkySafari description. This is very 
+        experimental!!
+        """
+        header = "SkyObject=BeginObject\n%s\nEndObject=SkyObject"
+        lines = []
+        
+        #object id
+        if self.body_type in ["STAR"]:
+            object_id = 2
+        else:
+            object_id = 4
+        lines.append("\tObjectID=%d,-1,-1" % object_id)
+        lines.append("\tCommonName=%s" % self.additional_names)
+        lines.append("\tCatalogNumber=%s" % self.name)
+        lines.append("\tCatalogNumber=%s" % self.additional_names)
+        
+        full_text = header % "\n".join(lines)
+        return full_text
+        
 
 class Location(tables.IsDescription):
     name = tables.StringCol(128)
@@ -151,6 +189,8 @@ class Location(tables.IsDescription):
     longitude = tables.Float64Col()
     height = tables.Float64Col()
     bortle_class = tables.Int8Col()
+
+
 
 class MasterDatabase(object):
     """This is a class that keeps track of all the info in the organizer. The
@@ -173,6 +213,10 @@ class MasterDatabase(object):
             raise ValueError("Wrong type for database: %s" % type(database))
         
         self.populate_groups()
+
+    def __delete__(self):
+        print "closing database %s"% self.db
+        self.db.close()
     
     def populate_groups(self):
         """Create the groups usually stored in the database, if those are not
@@ -218,14 +262,6 @@ class MasterDatabase(object):
         row.append()
         loc_table.flush()
 
-    def __find_in_table(self, name, table):
-        assert isinstance(table, tables.Table)
-        newname = name.replace(" ", "").lower()
-        for row in table.iterrows():            
-            if newname in row["name"].replace(" ", "").lower():
-                return row
-        return None
-
     def find_catalog(self, name):
         """
         Finds a catalog from name.
@@ -237,7 +273,26 @@ class MasterDatabase(object):
         Returns a list with all the catalogs.
         """
         return self.db.root.catalogs._v_children.keys()
+
+    def __find_in_table(self, name, table):
+        ret = set()
+        assert isinstance(table, tables.Table)
         
+        newname = name.replace(" ", "").lower()
+        
+        for row in table.iterrows():
+            if ( (newname == row["name"].replace(" ", "").lower()) or
+                 (newname == row["additional_names"].replace(" ", "").lower())
+                 ):
+                #found exactly the name
+                return set([Body(row)])
+            elif ((newname in row["name"].replace(" ", "").lower()) or
+                  (newname in row["additional_names"].replace(" ", "").lower()) or
+                  (newname in row["notes"].replace(" ", "").lower())
+                 ):
+                ret.add(Body(row))
+                
+        return ret
     
     def find_body(self, name, catalog = None):
         """Look for an object by name. It can match non-exact results and 
@@ -247,26 +302,25 @@ class MasterDatabase(object):
         specify a catalog.
         
         
-        Returns a Body or None if the object could not be found.
+        Returns a set of Bodies whose name, additional names or notes match the
+        supplied name. If no body is found the the returned set is empty.
         """
         if catalog is None:
-            for t in self.db.root.catalogs:
-                res = self.__find_in_table(name, t)
-                if res is not None:
-                    return Body(res)
-            return None
+            catalogs_to_search = self.db.root.catalogs
         else:
-            res = self.__find_in_table(name, self.db.getNode("/catalogs",
-                                                             catalog))
-            if res is not None:
-                return Body(res)
-            else:
-                return None
+            catalogs_to_search = [self.db.getNode("/catalogs",
+                                                  catalog)]
+        ret = set()
+        for t in catalogs_to_search:
+            ret.update(self.__find_in_table(name, t))
+        
+        return ret
+        
     
     def find_all_visible(self, observer, catalog, 
                          start_time = None, end_time = None, 
                          horizon = None,
-                         filter_fun = None
+                         filter_functions = None,
                          ):
         """Returns a list of all the objects in a catalog that are visible by 
         observer in a given timespan.
@@ -281,19 +335,26 @@ class MasterDatabase(object):
                     None then the observer time is used.
         horizon: if not None defines the observer's horizon, otherwise the one from
                 the observer is used.
+        filter_functions: a list of functions that take a Body instance and return
+                either True or False. If all the functions return True then the
+                body is added to the return list.
         
         
         Returns:
-        a list of ephem.FixedBody instances.
+        a list of Body instances.
         """
         
+        horizon = str(horizon)
         table = self.find_catalog(catalog)
         isinstance(table, tables.Table)
+        if filter_functions is None:
+            filter_functions = []
         
         bodies = []
-        for line in table.col("edb_string"):
-            body = ephem.readdb(line)
-            if can_observe(observer, body, start_time, end_time, horizon):
+        for row in table.iterrows():
+            body = Body(row)
+            if (all(f(body) for f in filter_functions) and
+                can_observe(observer, body.ephem_body, start_time, end_time, horizon)):
                 bodies.append(body)
         return bodies    
     
@@ -412,6 +473,9 @@ def create_date(observer, time = "now"):
     time: either a datetime instance, or one of the strings: 
           (now, sunrise, sunset)
     timezone: a timezone string (see pytz documentation)
+    
+    Return:
+    an ephem.Date instance
     """
 
     if type(time) is str:
@@ -425,13 +489,12 @@ def create_date(observer, time = "now"):
         elif time == "sunset":
             t = observer.next_setting(ephem.Sun(), use_center=True)
         else:
-            #assume UTC
             d = dateutil.parser.parse(time)
             if d.tzinfo is None:
                 logging.warn("Assuming that time %s is local", d)
                 d = d.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
                     pytz.UTC)
-                t = ephem.Date(t)
+                t = ephem.Date(d)
         
     elif type(time) is datetime.datetime:
         #check for naive time
@@ -482,15 +545,15 @@ def can_observe(observer, body, start_time = None, end_time = None,
         copy_observer.horizon = horizon
     
     try:
-        setting = copy_observer.next_setting(body)
-        rising = copy_observer.next_rising(body)
+        setting = copy_observer.next_setting(body, use_center=True)
+        rising = copy_observer.next_rising(body, use_center=True)
     except ephem.NeverUpError:
         return False
     except ephem.AlwaysUpError:
         return True
     
     if rising > setting:
-        rising = copy_observer.previous_rising(body)
+        rising = copy_observer.previous_rising(body, use_center=True)
     #====rise========set=======#
     #========observe======stop=#
     cond1 = rising < start_time < setting
@@ -500,6 +563,11 @@ def can_observe(observer, body, start_time = None, end_time = None,
     cond2 = start_time < rising < end_time
     
     return cond1 or cond2
-
     
-        
+def create_sky_safari_list(set_of_bodies):
+    """Creates a Sky Safari Observation list from a set (iterable) of bodies.
+    Returns the string.
+    """
+    ret = "SkySafariObservingListVersion=3.0\n"
+    ret += "\n".join(body.sky_safari_entry() for body in set_of_bodies)
+    return ret
