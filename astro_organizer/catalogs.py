@@ -75,55 +75,31 @@ class TableBody(tables.IsDescription):
     central_star_mag = tables.Float64Col()
     catalog = tables.StringCol(4)
     ngc_descr = tables.StringCol(55)
-    notes = tables.StringCol(200)
+    notes = tables.StringCol(1024)
 
 class Body(object):
     
-    def __init__(self, row_pointer = None):
-        self.__ephem_body = None
-        if row_pointer is None:
-            self.name = None
-            self.additional_names = None
-            self.body_type = None
-            self.constellation = None
-            
-            self.ra = None
-            self.dec = None
-            self.mag = None
-            
-            self.surface_brightness = None
-            self.size_max = None
-            self.size_min = None
-            self.positional_angle = None
-            self.sci_class = None
-            self.central_star_mag = None
-            self.catalog = None
-            self.ngc_descr = None
-            self.notes = None
-            
-            self.__row_pointer = None
+    def __init__(self, row_pointer):
+        self._ephem_body = None
+        self._row_pointer = row_pointer
+        self._table = row_pointer.table
+        self._nrow = row_pointer.nrow
         
-        else:
-            self.name = row_pointer['name']
-            self.additional_names = row_pointer['additional_names']
-            self.body_type = row_pointer['body_type']
-            self.constellation = row_pointer['constellation']
-            
-            self.ra = row_pointer['ra']
-            self.dec = row_pointer['dec']
-            self.mag = row_pointer['mag']
-            
-            self.surface_brightness = float(row_pointer['surface_brightness'])
-            self.size_max = row_pointer['size_max']
-            self.size_min = row_pointer['size_min']
-            self.positional_angle = row_pointer['positional_angle']
-            self.sci_class = row_pointer['sci_class']
-            self.central_star_mag = row_pointer['central_star_mag']
-            self.catalog = row_pointer['catalog']
-            self.ngc_descr = row_pointer['ngc_descr']
-            self.notes = row_pointer['notes']
-            
-            self.__row_pointer = row_pointer
+    def __getattr__(self, name):
+        try:
+            table = object.__getattribute__(self, "_table")
+            nrow = object.__getattribute__(self, "_nrow")
+            return getattr(table.cols, name)[nrow]
+        except AttributeError, e:
+            raise AttributeError("There is no %s value in the table" % name)
+    
+    def __setattr__(self, name, value):
+        try:
+            col  = getattr(self._table.cols, name)
+            col[self._nrow] = value
+            self._table.flush()
+        except AttributeError:
+            object.__setattr__(self, name, value)                
     
     def __repr__(self):
         return self.name + "; " + self.additional_names
@@ -157,9 +133,9 @@ class Body(object):
     
     @property
     def ephem_body(self):
-        if self.__ephem_body is None:
-            self.__ephem_body = ephem.readdb(self.ephem_string())
-        return self.__ephem_body
+        if self._ephem_body is None:
+            self._ephem_body = ephem.readdb(self.ephem_string())
+        return self._ephem_body
     
     def sky_safari_entry(self):
         """
@@ -178,6 +154,7 @@ class Body(object):
         lines.append("\tCommonName=%s" % self.additional_names)
         lines.append("\tCatalogNumber=%s" % self.name)
         lines.append("\tCatalogNumber=%s" % self.additional_names)
+        lines.append("\tComment=%s" % self.notes)
         
         full_text = header % "\n".join(lines)
         return full_text
