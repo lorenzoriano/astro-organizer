@@ -75,7 +75,10 @@ class TableBody(tables.IsDescription):
     central_star_mag = tables.Float64Col()
     catalog = tables.StringCol(4)
     ngc_descr = tables.StringCol(55)
-    notes = tables.StringCol(1024)
+    notes = tables.StringCol(86)
+    
+class NotesTable(tables.IsDescription):
+    additional_notes = tables.StringCol(512)
 
 class Body(object):
     
@@ -84,6 +87,7 @@ class Body(object):
         self._row_pointer = row_pointer
         self._table = row_pointer.table
         self._nrow = row_pointer.nrow
+        self._db = self._table._v_file
         
     def __getattr__(self, name):
         try:
@@ -136,7 +140,46 @@ class Body(object):
         if self._ephem_body is None:
             self._ephem_body = ephem.readdb(self.ephem_string())
         return self._ephem_body
+
+    def __get_additional_notes(self):
+        try:
+            node = self._db.getNode("/notes", self.name)
+        except tables.NoSuchNodeError:
+            return []
+        return [r["additional_notes"] for r in node.iterrows()]
+
+    def __set_additional_notes(self, value):
+        if len(value) > 512:
+            raise ValueError("Input length is %d, maximum is 512" % len(value))
+        
+        try:
+            node = self._db.getNode("/notes", self.name)
+        except tables.NoSuchNodeError:
+            node = self._db.createTable("/notes", self.name, NotesTable)
+        
+        row = node.row
+        row["additional_notes"] = value
+        row.append()
+        node.flush()        
     
+    def __delete_additional_notes(self):
+        try:
+            node = self._db.getNode("/notes", self.name)
+        except tables.NoSuchNodeError:        
+            return #silently ignore
+        
+        try:
+            node.removeRows(-1)
+        except NotImplementedError:
+            #weird pytables thing
+            self._db.removeNode("/notes", self.name)
+        
+    additional_notes = property(__get_additional_notes,
+                                __set_additional_notes,
+                                __delete_additional_notes
+                                )    
+    
+    @property
     def sky_safari_entry(self):
         """
         Returns a string with the SkySafari description. This is very 
@@ -154,7 +197,15 @@ class Body(object):
         lines.append("\tCommonName=%s" % self.additional_names)
         lines.append("\tCatalogNumber=%s" % self.name)
         lines.append("\tCatalogNumber=%s" % self.additional_names)
-        lines.append("\tComment=%s" % self.notes)
+        
+        comment = ""
+        if self.notes != "":
+            comment += self.notes
+        an = self.additional_notes
+        if len(an) != 0:
+            comment += " || " + " || ".join(an)
+        if comment != "":
+            lines.append("\tComment=%s" % comment)
         
         full_text = header % "\n".join(lines)
         return full_text
@@ -181,7 +232,6 @@ class MasterDatabase(object):
             self.db = tables.openFile(database, "a", 
                                       title="AstroOrganizer Database",
                                       filters=filters)
-            
         
         elif type(database) is tables.File:
             self.db = database
@@ -203,6 +253,8 @@ class MasterDatabase(object):
             self.db.createGroup("/","catalogs")
         if "/locations" not in self.db:
             self.db.createTable("/","locations", Location)        
+        if "/notes" not in self.db:
+            self.db.createGroup("/","notes")                
         
         self.db.flush()
         
@@ -212,11 +264,11 @@ class MasterDatabase(object):
         #"""
         #create_catalog_from_edb(catalog_name, self, edb_file_obj)
 
-    def load_sac(self, catalog_name, edb_file_obj):
+    def load_sac(self, catalog_name, sac_file_obj):
         """Loads a xephem edb database specified in edb_file_obj and stores it
         into catalog_name.
         """
-        create_catalog_from_sac(catalog_name, self, edb_file_obj)    
+        create_catalog_from_sac(catalog_name, self, sac_file_obj)    
         
     def add_location(self, name, latitude, longitude, height, 
                      bortle_class = 7):
@@ -291,6 +343,25 @@ class MasterDatabase(object):
         for t in catalogs_to_search:
             ret.update(self.__find_in_table(name, t))
         
+        return ret
+
+    def __getattr__(self, value):
+        elements = self.find_body(value)
+        if len(elements) == 0:
+            raise AttributeError("%s object has no attribute %s" %(
+                self.__class__.__name__, value))
+        else:
+            return elements.pop()
+    
+    def find_bodies(self, names):
+        """Returns all the objects matching the names. 
+        
+        Parameters:
+        names: an iterable over strings
+        """
+        ret = set()
+        for name in names:
+            ret.update(self.find_body(name))
         return ret
         
     
@@ -546,5 +617,5 @@ def create_sky_safari_list(set_of_bodies):
     Returns the string.
     """
     ret = "SkySafariObservingListVersion=3.0\n"
-    ret += "\n".join(body.sky_safari_entry() for body in set_of_bodies)
+    ret += "\n".join(body.sky_safari_entry for body in set_of_bodies)
     return ret
