@@ -7,55 +7,9 @@ import dateutil.parser
 import csv
 import math
 
-ephem_dict = {"A":"Cluster of galaxies",
-              "B":"Binary Star (Deprecated)",
-              "C":"Cluster, globular",
-              "D":"Star, visual double",
-              "F":"Nebula, diffuse",
-              "G":"Galaxy, spiral",
-              "H":"Galaxy, spherical",
-              "J":"Radio",
-              "K":"Nebula, dark",
-              "L":"Pulsar",
-              "M":"Star, multiple",
-              "N":"Nebula, bright",
-              "O":"Cluster, open",
-              "P":"Nebula, planetary",
-              "Q":"Quasar",
-              "R":"Supernova remnant",
-              "S":"Star",
-              "T":"Stellar object",
-              "U":"Cluster, with nebulosity",
-              "Y":"Supernova",
-              "V":"Star, variable"
-              }
+from body import Body
 
-sac_to_ephem_dict = {'ASTER': 'T',
-                     'BRTNB': 'N',
-                     'CL+NB': 'U',
-                     'DRKNB': 'K',
-                     'GALCL': 'A',
-                     'GALXY': 'F',
-                     'GLOCL': 'C',
-                     'GX+DN': 'F',
-                     'GX+GC': 'C', 
-                     'G+C+N': 'U',
-                     'LMCCN': 'U',
-                     'LMCDN': 'F',
-                     'LMCGC': 'C',
-                     'LMCOC': 'O',
-                     'NONEX': 'T',
-                     'OPNCL': 'O',
-                     'PLNNB': 'P',
-                     'SMCCN': 'U',
-                     'SMCDN': 'F',
-                     'SMCGC': 'C',
-                     'SMCOC': 'O',
-                     'SNREM': 'R',
-                     'QUASR': 'Q'
-                     }
-
-class TableBody(tables.IsDescription):
+class _TableBody(tables.IsDescription):
     name = tables.StringCol(20)
     additional_names = tables.StringCol(20)
     body_type = tables.StringCol(5)
@@ -76,148 +30,14 @@ class TableBody(tables.IsDescription):
     catalog = tables.StringCol(4)
     ngc_descr = tables.StringCol(55)
     notes = tables.StringCol(86)
-    
-class NotesTable(tables.IsDescription):
-    additional_notes = tables.StringCol(512)
-
-class Body(object):
-    
-    def __init__(self, row_pointer):
-        self._ephem_body = None
-        self._row_pointer = row_pointer
-        self._table = row_pointer.table
-        self._nrow = row_pointer.nrow
-        self._db = self._table._v_file
-        
-    def __getattr__(self, name):
-        try:
-            table = object.__getattribute__(self, "_table")
-            nrow = object.__getattribute__(self, "_nrow")
-            return getattr(table.cols, name)[nrow]
-        except AttributeError, e:
-            raise AttributeError("There is no %s value in the table" % name)
-    
-    def __setattr__(self, name, value):
-        try:
-            col  = getattr(self._table.cols, name)
-            col[self._nrow] = value
-            self._table.flush()
-        except AttributeError:
-            object.__setattr__(self, name, value)                
-    
-    def __repr__(self):
-        return self.name + "; " + self.additional_names
-    
-    def ephem_string(self):
-        string = []
-        string.append(self.name)
-        try:
-            string.append("f|" + sac_to_ephem_dict[self.body_type])
-        except KeyError:
-            string.append("f|T")
-        string.append(str(ephem.hours(self.ra)))
-        string.append(str(ephem.degrees(self.dec)))
-        string.append(str(self.mag))
-        string.append("2000")
-        
-        max_s = self.size_max
-        if len(max_s) == 0:
-            fp = 0
-        elif max_s[-1] == 'm': #arcmin
-            fp = float(max_s[:-1]) / 3437.74677078
-        elif max_s[-1] == 's': #arcsec
-            fp = float(max_s[:-1]) / 206264.806247
-        elif max_s[-1] == 'd': #degree
-            fp = float(max_s[:-1]) / 57.2957795131 
-        else:
-            raise ValueError("Unkwnown format for size_max: " + max_s)
-        string.append(str(fp * 206264.806247))
-        
-        return ','.join(string)
-    
-    @property
-    def ephem_body(self):
-        if self._ephem_body is None:
-            self._ephem_body = ephem.readdb(self.ephem_string())
-        return self._ephem_body
-
-    def __get_additional_notes(self):
-        try:
-            node = self._db.getNode("/notes", self.name)
-        except tables.NoSuchNodeError:
-            return []
-        return [r["additional_notes"] for r in node.iterrows()]
-
-    def __set_additional_notes(self, value):
-        if len(value) > 512:
-            raise ValueError("Input length is %d, maximum is 512" % len(value))
-        
-        try:
-            node = self._db.getNode("/notes", self.name)
-        except tables.NoSuchNodeError:
-            node = self._db.createTable("/notes", self.name, NotesTable)
-        
-        row = node.row
-        row["additional_notes"] = value
-        row.append()
-        node.flush()        
-    
-    def __delete_additional_notes(self):
-        try:
-            node = self._db.getNode("/notes", self.name)
-        except tables.NoSuchNodeError:        
-            return #silently ignore
-        
-        try:
-            node.removeRows(-1)
-        except NotImplementedError:
-            #weird pytables thing
-            self._db.removeNode("/notes", self.name)
-        
-    additional_notes = property(__get_additional_notes,
-                                __set_additional_notes,
-                                __delete_additional_notes
-                                )    
-    
-    @property
-    def sky_safari_entry(self):
-        """
-        Returns a string with the SkySafari description. This is very 
-        experimental!!
-        """
-        header = "SkyObject=BeginObject\n%s\nEndObject=SkyObject"
-        lines = []
-        
-        #object id
-        if self.body_type in ["STAR"]:
-            object_id = 2
-        else:
-            object_id = 4
-        lines.append("\tObjectID=%d,-1,-1" % object_id)
-        lines.append("\tCommonName=%s" % self.additional_names)
-        lines.append("\tCatalogNumber=%s" % self.name)
-        lines.append("\tCatalogNumber=%s" % self.additional_names)
-        
-        comment = ""
-        if self.notes != "":
-            comment += self.notes
-        an = self.additional_notes
-        if len(an) != 0:
-            comment += " || " + " || ".join(an)
-        if comment != "":
-            lines.append("\tComment=%s" % comment)
-        
-        full_text = header % "\n".join(lines)
-        return full_text
         
 
-class Location(tables.IsDescription):
+class _Location(tables.IsDescription):
     name = tables.StringCol(128)
     latitude = tables.Float64Col()
     longitude = tables.Float64Col()
     height = tables.Float64Col()
     bortle_class = tables.Int8Col()
-
 
 
 class MasterDatabase(object):
@@ -252,7 +72,7 @@ class MasterDatabase(object):
         if "/catalogs" not in self.db:
             self.db.createGroup("/","catalogs")
         if "/locations" not in self.db:
-            self.db.createTable("/","locations", Location)        
+            self.db.createTable("/","locations", _Location)        
         if "/notes" not in self.db:
             self.db.createGroup("/","notes")                
         
@@ -464,7 +284,7 @@ def create_catalog_from_sac(name, master_db, sac_file_obj,):
     
     group = db.getNode("/", "catalogs")
     
-    table = db.createTable(group, name, TableBody, "SAC Database")
+    table = db.createTable(group, name, _TableBody, "SAC Database")
     element = table.row    
         
     if type(sac_file_obj) is str:
