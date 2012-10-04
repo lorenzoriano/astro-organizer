@@ -36,7 +36,7 @@ class Body(object):
             table = object.__getattribute__(self, "_table")
             nrow = object.__getattribute__(self, "_nrow")
             return getattr(table.cols, name)[nrow]
-        except AttributeError, e:
+        except AttributeError:
             raise AttributeError("There is no %s value in the table" % name)
     
     def __setattr__(self, name, value):
@@ -47,9 +47,12 @@ class Body(object):
         except AttributeError:
             object.__setattr__(self, name, value)                
     
-    def __repr__(self):
-        return self.name + "; " + self.additional_names
-    
+    def __repr__(self):        
+        if self.additional_names != "":
+            return self.name + "; " + self.additional_names
+        else:
+            return self.name
+        
     def ephem_string(self):
         string = []
         string.append(self.name)
@@ -121,10 +124,10 @@ class Body(object):
                                 __delete_additional_notes
                                 )    
     
-    @property
     def sky_safari_entry(self, add_notes = True,
                          add_additional_notes = True,
-                         add_ngc_description = True):
+                         add_ngc_description = True,
+                         additional_comments = None):
         """
         Returns a string with the SkySafari description. This is very 
         experimental!!
@@ -154,6 +157,12 @@ class Body(object):
             d = self.ngc_description
             comment += " -- NGC: " + d
             
+        if additional_comments is not None:
+            if comment == "":
+                comment = additional_comments
+            else:                
+                comment += " || " + additional_comments
+                
         if comment != "":
             lines.append("\tComment=%s" % comment)
     
