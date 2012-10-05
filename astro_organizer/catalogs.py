@@ -69,6 +69,8 @@ class MasterDatabase(object):
             self.db.createTable("/", "locations", _Location)        
         if "/notes" not in self.db:
             self.db.createGroup("/", "notes")                
+        if "/tours" not in self.db:
+            self.db.createGroup("/", "tours")            
         
         self.db.flush()
         
@@ -222,7 +224,6 @@ class MasterDatabase(object):
         location: a string describing the location
         time: either a datetime instance, or one of the strings: 
               (now, sunrise, sunset)
-        timezone: a timezone string (see pytz documentation)
         """
         
         location_found = False
