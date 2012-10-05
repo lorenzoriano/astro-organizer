@@ -53,11 +53,11 @@ def observable(observer,
         if start_time is None:
             st = observer.date
         else:
-            st = utils.create_date(start_time)
+            st = utils.create_date(observer, start_time)
         if end_time is None:
             et = observer.date
         else:
-            et = utils.create_date(end_time)
+            et = utils.create_date(observer, end_time)
             
         if horizon is None:
             copy_observer.horizon = observer.horizon
