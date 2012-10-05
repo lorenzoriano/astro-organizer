@@ -84,7 +84,7 @@ class Tour(object):
         
         self._bodies.add(body_obj)
         self._notes.append(note)
-        self._positions[body_obj] = self._table.nrows - 1
+        self._positions[body_obj.name] = self._table.nrows - 1
     
     def delete(self):
         """Removes the tour from the database.
@@ -120,16 +120,24 @@ class Tour(object):
     
     def sky_safari_entry(self, add_notes = True,
                          add_additional_notes = True,
-                         add_ngc_description = True
+                         add_ngc_description = True,
+                         use_additional_names = False
                          ):
         """Creates a Sky Safari Observation list from this tour.
         Returns the string.
         """
+        def __note_filter(note):
+            if note != "":
+                return "Tour note: " + note
+            else:
+                return None
+        
         ret = "SkySafariObservingListVersion=3.0\n"
         ret += "\n".join(body.sky_safari_entry(add_notes,
                                                add_additional_notes,
                                                add_ngc_description,
-                                               "Tour note: " + note,                                               
+                                               __note_filter(note),
+                                               use_additional_names
                                                )
                          for body,note in zip(self.ordered_bodies(),
                                               self._notes)
