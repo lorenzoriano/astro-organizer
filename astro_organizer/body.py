@@ -127,11 +127,16 @@ class Body(object):
     def sky_safari_entry(self, add_notes = True,
                          add_additional_notes = True,
                          add_ngc_description = True,
-                         additional_comments = None):
+                         additional_comments = None,
+                         use_additional_names = False):
         """
         Returns a string with the SkySafari description. This is very 
         experimental!!
         """
+        def strip_unwanted_spaces(name):
+            tokens = name.split("  ")
+            return " ".join(t.strip(" ,.") for t in tokens)
+        
         header = "SkyObject=BeginObject\n%s\nEndObject=SkyObject"
         lines = []
         
@@ -141,9 +146,11 @@ class Body(object):
         else:
             object_id = 4
         lines.append("\tObjectID=%d,-1,-1" % object_id)
-        lines.append("\tCommonName=%s" % self.additional_names)
-        lines.append("\tCatalogNumber=%s" % self.name)
-        lines.append("\tCatalogNumber=%s" % self.additional_names)
+        if use_additional_names:
+            lines.append("\tCommonName=%s" % self.additional_names)
+        lines.append("\tCatalogNumber=%s" % strip_unwanted_spaces(self.name))
+        if use_additional_names:
+            lines.append("\tCatalogNumber=%s" % strip_unwanted_spaces(self.additional_names))
         
         comment = ""
         if add_notes:
