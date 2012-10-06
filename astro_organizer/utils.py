@@ -91,7 +91,7 @@ def create_date(observer, time = "now"):
     Return:
     an ephem.Date instance
     """
-
+    
     if type(time) is str:
         now = datetime.datetime.utcnow()
         observer.date = ephem.Date(now)
@@ -106,7 +106,7 @@ def create_date(observer, time = "now"):
             #this requires parsing
             d = dateutil.parser.parse(time)
             if d.tzinfo is None:
-                logging.warn("Assuming that time %s is local", d)
+                logging.debug("Assuming that time %s is local", d)
                 d = d.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
                     pytz.UTC)
                 t = ephem.Date(d)
@@ -115,7 +115,7 @@ def create_date(observer, time = "now"):
         #check for naive time
         isinstance(time, datetime.datetime)
         if time.tzinfo is None:
-            logging.warn("Timezone unspecified, assuming local")
+            logging.debug("Timezone unspecified, assuming local")
             d = time.replace(tzinfo = dateutil.tz.tzlocal()).astimezone(
                             pytz.UTC)
             t = ephem.Date(t)            
