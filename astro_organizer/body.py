@@ -49,7 +49,7 @@ class Body(object):
     
     def __repr__(self):        
         if self.additional_names != "":
-            return self.name + "; " + self.additional_names
+            return self.name + " (" + self.additional_names + ")"
         else:
             return self.name
         
