@@ -7,6 +7,7 @@ import logging
 import pytz
 
 import catalogs
+import body
 
 def create_catalog_from_sac(name, master_db, sac_file_obj,):
     """Creates an h5 catalog from a Saguaro Astronomical Catalog cvs file.
@@ -77,31 +78,50 @@ def create_catalog_from_sac(name, master_db, sac_file_obj,):
     db.flush()
     return master_db        
 
+def sunset(observer):
+    """Returns the astronomical sunset time according to observer. 
+    The observer's day is used for this calculation.
+    
+    Note: The astronomical sunset is much later than the common one.
+    """
+    
+    observer = copy_observer(observer)
+    now = datetime.datetime.utcnow()
+    observer.date = ephem.Date(now)
+    observer.horizon = "-18" #astronomical twilight    
+    t = observer.next_rising(ephem.Sun(), use_center=True)
+    return t
 
-def create_date(observer, time = "now"):
-    """Creates a date for an observer. The actual time can be specified as a 
+def sunrise(observer):
+    """Returns the astronomical sunrise time according to observer. 
+    The observer's day is used for this calculation.
+    
+    Note: The astronomical sunrise is much earlier than the common one.
+    """
+    
+    observer = copy_observer(observer)
+    now = datetime.datetime.utcnow()
+    observer.date = ephem.Date(now)
+    observer.horizon = "-18" #astronomical twilight    
+    t = observer.next_setting(ephem.Sun(), use_center=True)
+    return t
+
+def create_date(time = "now"):
+    """Creates an ephem date. The actual time can be specified as a 
     string or a datetime. If the time is interpreted and no timezone is found
     then the local timezone is used. Similarly if time is a datetime and no
     tzinfo member is specified, it is assumed to be local.
     
-    time: either a datetime instance, one of the strings: 
-          (now, sunrise, sunset), or a string interpretable by dateutil.parser
-    timezone: a timezone string (see pytz documentation)
+    time: either a datetime instance, now, or a string interpretable by dateutil.parser
     
     Return:
     an ephem.Date instance
     """
     
-    if type(time) is str:
-        now = datetime.datetime.utcnow()
-        observer.date = ephem.Date(now)
-        observer.horizon = "-18" #astronomical twilight
+    if isinstance(time, str):
         if time == "now":
-            t = ephem.Date(now)
-        elif time == "sunrise":
-            t = observer.next_rising(ephem.Sun(), use_center=True)
-        elif time == "sunset":
-            t = observer.next_setting(ephem.Sun(), use_center=True)
+            now = datetime.datetime.utcnow()            
+            t = ephem.Date(now)            
         else:
             #this requires parsing
             d = dateutil.parser.parse(time)
@@ -111,7 +131,7 @@ def create_date(observer, time = "now"):
                     pytz.UTC)
                 t = ephem.Date(d)
         
-    elif type(time) is datetime.datetime:
+    elif isinstance(time, datetime.datetime):
         #check for naive time
         isinstance(time, datetime.datetime)
         if time.tzinfo is None:
@@ -144,3 +164,30 @@ def create_sky_safari_list(set_of_bodies,
                                            )
                                            for body in set_of_bodies)
     return ret
+
+def copy_observer(observer):
+    """Returns a copy of an observer. Useful since deepcopy doesn't work with
+    the underlying C implementation.
+    """
+    
+    assert isinstance(observer, ephem.Observer)
+    copy_observer = ephem.Observer()
+    copy_observer.name = observer.name
+    copy_observer.lat = observer.lat
+    copy_observer.lon = observer.lon
+    copy_observer.elev = observer.elev
+    copy_observer.date = observer.date
+    copy_observer.pressure = observer.pressure
+    copy_observer.epoch = observer.epoch
+    copy_observer.horizon = observer.horizon
+    
+    return copy_observer
+
+def get_messier(b):
+    assert isinstance(b, body.Body)
+    
+    if not 'M' in b.catalog:
+        return ""
+    else:
+        return 
+    

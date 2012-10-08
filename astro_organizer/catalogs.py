@@ -245,7 +245,7 @@ class MasterDatabase(object):
         observer.lon = str(longitude)
         observer.elev = height    
         
-        t = utils.create_date(observer, time)
+        t = utils.create_date(time)
                 
         observer.horizon = 0
         observer.date = t

@@ -4,7 +4,7 @@ import ephem
 
 def messier_only():
     """Returns True if b is a Messier"""
-    return lambda b: b.additional_names.startswith("M ") 
+    return lambda b: 'M' in b.catalog
 
 def limit_magnitude(mag):
     """Returns a function that evaluates to True if the body magnitude is less
@@ -22,9 +22,9 @@ def constellation(const):
     return lambda b: b.constellation == const
 
 def observable(observer, 
-                start_time = None, 
-                end_time = None, 
-                horizon = None):
+               start_time = None, 
+               end_time = None, 
+               horizon = None):
     """Returns a function that evaluates to True if the observer can observe a 
     body at least once in a timespan, False otherwise.
     
@@ -43,21 +43,16 @@ def observable(observer,
         assert isinstance(body, Body)
         body = body.ephem_body
         
-        copy_observer = ephem.Observer()
-        copy_observer.name = observer.name
-        copy_observer.lat = observer.lat
-        copy_observer.lon = observer.lon
-        copy_observer.elev = observer.elev
-        copy_observer.date = observer.date
+        copy_observer = utils.copy_observer(observer)
         
         if start_time is None:
             st = observer.date
         else:
-            st = utils.create_date(observer, start_time)
+            st = utils.create_date(start_time)
         if end_time is None:
             et = observer.date
         else:
-            et = utils.create_date(observer, end_time)
+            et = utils.create_date(end_time)
             
         if horizon is None:
             copy_observer.horizon = observer.horizon
@@ -112,3 +107,4 @@ class MultiFilter(object):
     def filter(self, bodies):
         """Returns a list of bodies filtered according to this class."""
         return filter(self.__call__, bodies)
+        
