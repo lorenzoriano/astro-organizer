@@ -1,8 +1,10 @@
 import socket
 import logging
+import datetime
 
 import catalogs
 import body
+import ephem
 
 
 class SkyChartClient(object):
@@ -26,22 +28,33 @@ class SkyChartClient(object):
     def __not_found_message(self, msg):
         return "Not found" in self.__fix_response(msg)    
     
+    def __send_and_check(self, msg):
+        self.socket.sendall(msg + self.escape_char)
+        res = self.socket.recv(1024)
+        
+        if self.__is_ok_message(res):
+            logging.info("Command ok")
+            return True
+        else:
+            logging.warn("Problem with message: " + self.__fix_response(res))
+            return False        
+    
     def search(self, body_obj):
         
         if type(body_obj) is body.Body:
             body_obj = body_obj.name
         
-        cmd = "SEARCH " + body_obj + self.escape_char
-        self.socket.sendall(cmd)
-        res = self.socket.recv(1024)
+        cmd = "SEARCH " + body_obj
+        return self.__send_and_check(cmd)
         
-        if self.__is_ok_message(res):
-            logging.info("Object was found correctly")
-            return True
-        elif self.__not_found_message(res):
-            logging.warn("Object not found!")
-        else:
-            logging.warn("Uninterpreted message: " + self.__fix_response(res))
-            return False
+    
+    def setdate(self, date):
+        assert isinstance(date, datetime.datetime)
+        #yyyy-mm-dd hh:mm:ss
+        date_str = "\"%d-%d-%d %d:%d:%d\"" %(date.year, date.month, date.day,
+                                         date.hour, date.minute, date.second)
+        cmd = "SETDATE " +  date_str
+        return self.__send_and_check(cmd)
+        
         
             
