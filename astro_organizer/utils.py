@@ -186,18 +186,6 @@ def copy_observer(observer):
     
     return copy_observer
 
-def get_messier_string(b):
-    assert isinstance(b, body.Body)
-    
-    if 'M' not in b.catalog:
-        return None
-    else:        
-        additional_name = b.additional_names[1:]
-        number = int(additional_name)
-        three_digit_code = ("%3d" % number).replace(" ","0")
-        return "m"+three_digit_code
-    
-    
 def find_best_observable_time(body_obj, observer, start_time, end_time):
     """Find the best time to observe an object in a given interval.
     
@@ -231,15 +219,4 @@ def find_best_observable_time(body_obj, observer, start_time, end_time):
                                        )
     
     return ephem.Date(best_time[0])
-        
-def open_seds_info(body_obj):
-    assert isinstance(body_obj, body.Body)
-    m_str = get_messier_string(body_obj)
-
-    if m_str is None:
-        logging.error("%s is not a Messier!" % body_obj)
-        return
-    
-    web_url = "http://messier.seds.org/m/" + m_str + ".html"
-    webbrowser.open(web_url)
-    
+            
