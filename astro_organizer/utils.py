@@ -5,9 +5,12 @@ import datetime
 import dateutil.parser
 import logging
 import pytz
+import webbrowser
 
 import catalogs
 import body
+
+from scipy import optimize
 
 def create_catalog_from_sac(name, master_db, sac_file_obj,):
     """Creates an h5 catalog from a Saguaro Astronomical Catalog cvs file.
@@ -89,7 +92,7 @@ def sunset(observer):
     now = datetime.datetime.utcnow()
     observer.date = ephem.Date(now)
     observer.horizon = "-18" #astronomical twilight    
-    t = observer.next_rising(ephem.Sun(), use_center=True)
+    t = observer.next_setting(ephem.Sun(), use_center=True)
     return t
 
 def sunrise(observer):
@@ -103,7 +106,7 @@ def sunrise(observer):
     now = datetime.datetime.utcnow()
     observer.date = ephem.Date(now)
     observer.horizon = "-18" #astronomical twilight    
-    t = observer.next_setting(ephem.Sun(), use_center=True)
+    t = observer.next_rising(ephem.Sun(), use_center=True)
     return t
 
 def create_date(time = "now"):
@@ -183,11 +186,60 @@ def copy_observer(observer):
     
     return copy_observer
 
-def get_messier(b):
+def get_messier_string(b):
     assert isinstance(b, body.Body)
     
-    if not 'M' in b.catalog:
-        return ""
-    else:
-        return 
+    if 'M' not in b.catalog:
+        return None
+    else:        
+        additional_name = b.additional_names[1:]
+        number = int(additional_name)
+        three_digit_code = ("%3d" % number).replace(" ","0")
+        return "m"+three_digit_code
+    
+    
+def find_best_observable_time(body_obj, observer, start_time, end_time):
+    """Find the best time to observe an object in a given interval.
+    
+    Parameters:
+    body_obj: a body.Body instance
+    observer: an ephem.Observer instance
+    start_time, end_time: values that create_date accepts
+    
+    Returns:
+    an ephem.Date instance.
+    """
+    
+    assert isinstance(body_obj, body.Body)
+    start_time = create_date(start_time)
+    end_time = create_date(end_time)
+        
+    ephem_body = body_obj.ephem_body
+    
+    observer = copy_observer(observer)
+    
+    def neg_altitude(time):
+        observer.date = time[0]
+        ephem_body.compute(observer)
+        return -ephem_body.alt
+    
+    middtime = start_time + (end_time - start_time) / 2
+    best_time = optimize.fmin_l_bfgs_b(neg_altitude, [middtime],
+                                       bounds=[(start_time, end_time)],
+                                       approx_grad=True,
+                                       epsilon=ephem.minute
+                                       )
+    
+    return ephem.Date(best_time[0])
+        
+def open_seds_info(body_obj):
+    assert isinstance(body_obj, body.Body)
+    m_str = get_messier_string(body_obj)
+
+    if m_str is None:
+        logging.error("%s is not a Messier!" % body_obj)
+        return
+    
+    web_url = "http://messier.seds.org/m/" + m_str + ".html"
+    webbrowser.open(web_url)
     
