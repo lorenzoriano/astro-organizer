@@ -21,7 +21,7 @@ class BodiesTable(QtGui.QTableView):
         
         menu = QtGui.QMenu(self)
         menu.addAction(self.display_info)
-        menu.exec_(model_index)
+        menu.exec_(self.mapToGlobal(point))
     
     def load_from_list(self, set_of_bodies):
         """Creates a QtGui.QTableView with all the elements
