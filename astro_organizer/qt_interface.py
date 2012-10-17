@@ -10,7 +10,7 @@ app = QtGui.qApp
 if app is None:
     app = QtGui.QApplication(sys.argv)
 
-def create_table_from_set(set_of_bodies):
+def create_table_from_set(observer, set_of_bodies):
     """Creates a QtGui.QTableView with all the elements
     in set_of_bodies.
     
@@ -21,6 +21,8 @@ def create_table_from_set(set_of_bodies):
     a QtGui.QTableView instance
     """
     
-    tableView = interfaces.table_bodies.BodiesTable(set_of_bodies)   
+    tableView = interfaces.table_bodies.BodiesTable(observer,
+                                                    set_of_bodies)
     
+    tableView.show()
     return tableView
