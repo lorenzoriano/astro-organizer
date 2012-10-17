@@ -1,10 +1,15 @@
 import matplotlib
+matplotlib.use('Qt4Agg')
+
 import pylab
 import numpy as np
 import ephem
 
-import utils
-import body
+from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+
+from .. import utils
+from .. import body
 
 
 def plot_daily_altitude(element, observer):
@@ -32,6 +37,7 @@ def plot_daily_altitude(element, observer):
     
     altitudes = np.rad2deg(altitudes)
     fig = pylab.figure()
+    #fig = Figure(figsize=(600,600), dpi=72, facecolor=(1,1,1), edgecolor=(0,0,0))
     ax = fig.add_subplot(111)
     ax.plot_date(dtimes, altitudes, '-')    
     
@@ -63,7 +69,8 @@ def plot_daily_altitude(element, observer):
                                               
     ax.grid(True)
     fig.autofmt_xdate()
-    pylab.show()    
+        
+    pylab.show()
     
 def plot_yearly_altitude(element, observer, hour=20):
     assert isinstance(element, body.Body)
@@ -98,4 +105,5 @@ def plot_yearly_altitude(element, observer, hour=20):
     
     ax.grid(True)
     fig.autofmt_xdate()
-    pylab.show()        
+    
+    pylab.show()
