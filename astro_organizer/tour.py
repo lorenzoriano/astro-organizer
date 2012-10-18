@@ -37,6 +37,7 @@ class Tour(object):
         self._notes = []
         self._positions = {}
         self.__load_bodies()
+        self.filter_fun = lambda x : True
 
     def __load_bodies(self):
         self._bodies = set()
@@ -95,16 +96,16 @@ class Tour(object):
         self._db.db.removeNode("/tours", self.name)
     
     def __getitem__(self, i):        
-        return (self.ordered_bodies()[i])
+        return (self.ordered_bodies[i])
 
     def __iter__(self):
-        return iter(self.ordered_bodies())
+        return iter(self.ordered_bodies)
     
     def iteritems(self):
-        return itertools.izip(self._bodies, self._notes)
+        return itertools.izip(self.bodies, self._notes)
     
     def __len__(self):
-        return len(self._bodies)
+        return len(self.bodies)
     
     def __repr__(self):
         if self.title != "":
@@ -112,8 +113,13 @@ class Tour(object):
         else:
             return "Tour: %s" %(self.name)
 
+    @property
+    def bodies(self):
+        return filter(self.filter_fun, self._bodies)
+    
+    @property
     def ordered_bodies(self):
-        return sorted(self._bodies,
+        return sorted(self.bodies,
                       key = lambda b: self._positions[b.name]
                       )
 
@@ -139,7 +145,7 @@ class Tour(object):
                                                __note_filter(note),
                                                use_additional_names
                                                )
-                         for body,note in zip(self.ordered_bodies(),
+                         for body,note in zip(self.ordered_bodies,
                                               self._notes)
                          )
                                                
