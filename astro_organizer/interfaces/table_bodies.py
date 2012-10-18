@@ -19,7 +19,7 @@ class BodiesTable(QtGui.QTableView):
             date = str(ephem.localtime(observer.date))
             self.setWindowTitle(name + " - " + date)
         self.setSortingEnabled(True)
-        
+                
         self.__columns = ["name", 
                           "additional_names", 
                           "body_type", 
@@ -88,13 +88,14 @@ class BodiesTable(QtGui.QTableView):
         
         #adding headers
         for column in range(ncols):
-            index = model.index(0, column)
-            model.setData(index, names[column])
+            model.setHeaderData(column, 
+                                QtCore.Qt.Horizontal,
+                                names[column])
         
         for b, row in zip(set_of_bodies, range(nrows)):
             assert isinstance(b, body.Body)
             for column, colname in enumerate(names):
-                index = model.index(row+1, column)
+                index = model.index(row, column)
                 
                 value = getattr(b, colname)
                 v_str = self.__value_translator[colname](value)
