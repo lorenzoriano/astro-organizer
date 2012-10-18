@@ -4,7 +4,7 @@ import filters
 import string_conversions
 import tour
 import utils
-import graphs
+import qt_interface
 
 Body = body.Body
 MasterDatabase = catalogs.MasterDatabase
