@@ -15,13 +15,22 @@ class BodiesTable(QtGui.QTableView):
         self.customContextMenuRequested.connect(self.context_menu)
         self.__menus = []
         
+        self.bodies = {}
+        
         self.__observer = observer
         if observer is not None:
             name = observer.name
             date = str(ephem.localtime(observer.date))
             self.setWindowTitle(name + " - " + date)
         self.setSortingEnabled(True)
-                
+        
+        self.__create_actions()
+        self.__create_columns()        
+        
+        if list_of_bodies is not None:
+            self.load_from_list(list_of_bodies)
+        
+    def __create_columns(self):
         self.__columns = ["name", 
                           "additional_names", 
                           "body_type", 
@@ -32,7 +41,7 @@ class BodiesTable(QtGui.QTableView):
                           "size_max", 
                           "surface_brightness",
                           "notes"]
-        
+                 
         identity = lambda x:x
         ra = lambda x: str(ephem.hours(x))
         dec = lambda x: str(ephem.degrees(x))
@@ -48,17 +57,19 @@ class BodiesTable(QtGui.QTableView):
                                    "size_max" : identity, 
                                    "surface_brightness" : identity,
                                    "notes" : identity
-                                    }
-        
-        if list_of_bodies is not None:
-            self.load_from_list(list_of_bodies)
-        self.__createActions()
+                                    }         
+         
     
     def context_menu(self, point):
         model_index = self.indexAt(point)
-        print "Model chosen: ", model_index
-        isinstance(model_index, QtCore.QModelIndex)        
-        self.__model_chosen = model_index
+        
+        isinstance(model_index, QtCore.QModelIndex)   
+        
+        row = model_index.row()
+        name_index = self.model().index(row, 0)
+        name = self.model().data(name_index)        
+        print "Model chosen: ", name
+        self.__model_chosen = self.bodies[name]
         
         menu = QtGui.QMenu(self)
         for m in self.__menus:
@@ -75,11 +86,11 @@ class BodiesTable(QtGui.QTableView):
         Returns:
         a QtGui.QTableView instance
         """
-        
-        self.bodies = list(set_of_bodies)
+
+        self.bodies = dict((b.name, b) for b in set_of_bodies)
         names = self.__columns
         
-        nrows = len(set_of_bodies)
+        nrows = len(self.bodies)
         if nrows > 0:                    
             ncols = len(names)
         else:
@@ -95,17 +106,15 @@ class BodiesTable(QtGui.QTableView):
                                 QtCore.Qt.Horizontal,
                                 names[column])
         
-        for b, row in zip(set_of_bodies, range(nrows)):
-            assert isinstance(b, body.Body)
+        for b, row in zip(self.bodies.itervalues(), range(nrows)):
             for column, colname in enumerate(names):
-                index = model.index(row, column)
-                
+                index = model.index(row, column)                
                 value = getattr(b, colname)
                 v_str = self.__value_translator[colname](value)
                 model.setData(index, str(v_str))
                 
     
-    def __createActions(self):
+    def __create_actions(self):
         self.__menus.append(QtGui.QAction("Plot Daily Altitude", 
                                           self,
                                           triggered=self.__plot_altitude)
@@ -125,19 +134,15 @@ class BodiesTable(QtGui.QTableView):
                             )        
                 
     def __plot_altitude(self):
-        obj = self.bodies[ self.__model_chosen.row()]
-        graphs.plot_daily_altitude(obj,
+        graphs.plot_daily_altitude(self.__model_chosen,
                                    self.__observer)
     
     def __plot_yearly_altitude(self):
-        obj = self.bodies[ self.__model_chosen.row()]
-        graphs.plot_yearly_altitude(obj,
+        graphs.plot_yearly_altitude(self.__model_chosen,
                                    self.__observer)
 
     def __open_seeds_info(self):
-        obj = self.bodies[ self.__model_chosen.row()]
-        web_info.open_seds_info(obj)
+        web_info.open_seds_info(self.__model_chosen)
     
     def __open_wikipedia_info(self):
-        obj = self.bodies[ self.__model_chosen.row()]
-        web_info.open_wikipedia_info(obj)
+        web_info.open_wikipedia_info(self.__model_chosen)
