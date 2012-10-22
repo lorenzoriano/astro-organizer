@@ -3,6 +3,7 @@ import ephem
 
 from .. import body
 from .. import string_conversions
+from .. import web_info
 import graphs
 
 class BodiesTable(QtGui.QTableView):
@@ -12,6 +13,7 @@ class BodiesTable(QtGui.QTableView):
         
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
+        self.__menus = []
         
         self.__observer = observer
         if observer is not None:
@@ -37,15 +39,15 @@ class BodiesTable(QtGui.QTableView):
         body_type = string_conversions.sac_type
         constellation = lambda x:string_conversions.sac_constellation_to_str_dict[x]
         self.__value_translator = {"name" : identity,
-                                    "additional_names" : identity, 
-                                    "body_type" : body_type, 
-                                    "constellation" : constellation, 
-                                    "ra" : ra,
-                                    "dec" : dec, 
-                                    "mag" : identity, 
-                                    "size_max" : identity, 
-                                    "surface_brightness" : identity,
-                                    "notes" : identity
+                                   "additional_names" : identity, 
+                                   "body_type" : body_type, 
+                                   "constellation" : constellation, 
+                                   "ra" : ra,
+                                   "dec" : dec, 
+                                   "mag" : identity, 
+                                   "size_max" : identity, 
+                                   "surface_brightness" : identity,
+                                   "notes" : identity
                                     }
         
         if list_of_bodies is not None:
@@ -59,7 +61,8 @@ class BodiesTable(QtGui.QTableView):
         self.__model_chosen = model_index
         
         menu = QtGui.QMenu(self)
-        menu.addAction(self.display_info)
+        for m in self.__menus:
+            menu.addAction(m)
         menu.exec_(self.mapToGlobal(point))
     
     def load_from_list(self, set_of_bodies):
@@ -103,22 +106,38 @@ class BodiesTable(QtGui.QTableView):
                 
     
     def __createActions(self):
-        self.display_info = QtGui.QAction("Plot Daily Altitude", 
+        self.__menus.append(QtGui.QAction("Plot Daily Altitude", 
                                           self,
                                           triggered=self.__plot_altitude)
+                            )
 
-        #self.openAct = QtGui.QAction("&Open...", self,
-                #shortcut=QtGui.QKeySequence.Open,
-                #statusTip="Open an existing file", triggered=self.open)
-
-        #self.saveAct = QtGui.QAction("&Save", self,
-                #shortcut=QtGui.QKeySequence.Save,
-                #statusTip="Save the document to disk", triggered=self.save)    
+        self.__menus.append(QtGui.QAction("Plot Yearly Altitude", 
+                                          self,
+                                          triggered=self.__plot_yearly_altitude)
+                            )
+        self.__menus.append(QtGui.QAction("Open Seeds Info", 
+                                          self,
+                                          triggered=self.__open_seeds_info)
+                            )        
+        self.__menus.append(QtGui.QAction("Open Wikipedia Info", 
+                                          self,
+                                          triggered=self.__open_wikipedia_info)
+                            )        
                 
     def __plot_altitude(self):
-        obj = self.bodies[ self.__model_chosen.row()-1]
+        obj = self.bodies[ self.__model_chosen.row()]
         graphs.plot_daily_altitude(obj,
                                    self.__observer)
-        print "done"
-        
     
+    def __plot_yearly_altitude(self):
+        obj = self.bodies[ self.__model_chosen.row()]
+        graphs.plot_yearly_altitude(obj,
+                                   self.__observer)
+
+    def __open_seeds_info(self):
+        obj = self.bodies[ self.__model_chosen.row()]
+        web_info.open_seds_info(obj)
+    
+    def __open_wikipedia_info(self):
+        obj = self.bodies[ self.__model_chosen.row()]
+        web_info.open_wikipedia_info(obj)
