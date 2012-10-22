@@ -43,6 +43,7 @@ def plot_daily_altitude(element, observer):
     
     #sunrise and sunset
     sunrise = ephem.localtime(utils.sunrise(observer))
+    print "Sunrise: ", sunrise
     l = matplotlib.lines.Line2D([sunrise, sunrise],
                                 [-90, 90],
                                 #transform=ax.transAxes,
@@ -52,6 +53,7 @@ def plot_daily_altitude(element, observer):
     ax.add_line(l)    
     
     sunset = ephem.localtime(utils.sunset(observer))
+    print "Sunset: ", sunset
     l = matplotlib.lines.Line2D([sunset, sunset],
                                 [-90, 90],
                                 #transform=ax.transAxes,
@@ -101,7 +103,10 @@ def plot_yearly_altitude(element, observer, hour=20):
     ax.plot_date(dtimes, altitudes, '-')    
     
     ax.xaxis.set_major_locator(matplotlib.dates.MonthLocator())
-    #ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%H:%M"))
+        
+    ax.set_title("Yearly altitued for " + element.name + " at time "+str(hour))
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Altitude in degrees")
     
     ax.grid(True)
     fig.autofmt_xdate()
