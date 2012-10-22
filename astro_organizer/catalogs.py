@@ -112,6 +112,15 @@ class MasterDatabase(object):
         Returns a list with all the catalogs.
         """
         return self.db.root.catalogs._v_children.keys()
+    
+    def __iter__(self):
+        for table in self.db.root.catalogs:
+            for row in table.iterrows():
+                yield body.Body(row)
+    
+    def __len__(self):
+        return sum(len(c) for c in self.db.root.catalogs)
+        
 
     def __find_in_table(self, name, table):
         assert isinstance(table, tables.Table)        
